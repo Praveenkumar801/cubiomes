@@ -1,2 +1,0 @@
-/usr/bin/ar qc libcubiomes_static.a CMakeFiles/objects.dir/finders.c.o CMakeFiles/objects.dir/generator.c.o CMakeFiles/objects.dir/layers.c.o CMakeFiles/objects.dir/biomenoise.c.o CMakeFiles/objects.dir/biomes.c.o CMakeFiles/objects.dir/noise.c.o CMakeFiles/objects.dir/util.c.o CMakeFiles/objects.dir/quadbase.c.o
-/usr/bin/ranlib libcubiomes_static.a
