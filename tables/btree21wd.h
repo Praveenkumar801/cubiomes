@@ -45,7 +45,7 @@ static const int32_t btree21wd_param[][2] =
 
 static const uint64_t btree21wd_nodes[] =
 {
-    // Binary encoded biome parameter search tree for 1.21 Winter Drop (24w40a).
+    // Binary encoded biome parameter search tree for 1.21.4 Winter Drop (24w40a).
     //
     //   +-------------- If the top byte equals 0xFF, the node is a leaf and the
     //   |               second byte is the biome id, otherwise the two bytes
