@@ -36,7 +36,9 @@ enum MCVersion
     MC_1_21_3,
     MC_1_21_4, // 1.21.4 Winter Drop
     MC_1_21_WD = MC_1_21_4, // backwards compatibility alias
-    MC_1_21 = MC_1_21_4,
+    MC_1_21_5,
+    MC_1_21_11 = MC_1_21_5, // 1.21.5 through 1.21.11 share the same biome generation
+    MC_1_21 = MC_1_21_5,
     MC_NEWEST = MC_1_21,
 };
 
