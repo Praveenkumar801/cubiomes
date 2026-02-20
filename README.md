@@ -262,6 +262,144 @@ int main()
 }
 ```
 
+#### Speedrunning Seeds (MCSR-style)
+
+When speedrunning Minecraft, a "good" seed is one where the three structures
+needed to reach the credits appear close to the world origin:
+
+| Structure | Purpose |
+|-----------|---------|
+| **Nether Fortress** | Source of Blaze Rods → Eyes of Ender |
+| **Bastion Remnant** | Gold for Piglin bartering → Ender Pearls |
+| **Stronghold** | End Portal used to reach the Ender Dragon |
+
+The example below (`speedrun_seed.c`) applies a two-stage filter:
+
+1. **Geometry check (fast):** scans the 3×3 Nether region grid around the
+   origin and rejects seeds where no Fortress/Bastion generation attempt
+   falls within the desired Nether-block radius.  The first Stronghold
+   approximate position is also checked at this stage.
+2. **Biome validation (slow, only when stage 1 passes):** calls
+   `isViableStructurePos()` to confirm the biome requirements are actually
+   met, then resolves the exact Stronghold location and estimates spawn.
+
+> Note: Nether coordinates are 1:8 relative to the Overworld, so 200 Nether
+> blocks equals ~1600 Overworld blocks.
+
+Save the snippet below as `speedrun_seed.c` inside the cubiomes directory,
+then build and run:
+
+```sh
+$ make                    # builds libcubiomes.a
+$ gcc speedrun_seed.c libcubiomes.a -fwrapv -lm -lpthread -o speedrun_seed
+$ ./speedrun_seed
+```
+
+Expected output (exact seeds vary because the search starts from a random
+offset each run):
+
+```
+Searching for speedrun seeds (MC 1.16, Java Edition)...
+Criteria:
+  Nether Fortress within 200 Nether blocks of the Nether origin
+  Bastion Remnant within 200 Nether blocks of the Nether origin
+  First Stronghold within 2000 Overworld blocks of the world origin
+
+=== Seed #1 ===
+  World seed:               152303138064409
+  Overworld spawn:          ( -152,    -8)
+  Nether Fortress:          ( -128,   112)  [~170 Nether blocks from origin]
+  Bastion Remnant:          (    0,  -112)  [~112 Nether blocks from origin]
+  First Stronghold:         ( 1716,  -124)  [~1720 blocks from origin]
+...
+```
+
+```C
+// speedrun_seed.c  –  find seeds with a nearby Fortress, Bastion and Stronghold
+#include "finders.h"
+#include <math.h>
+#include <stdio.h>
+#include <time.h>
+
+#define MC_VERSION          MC_1_16
+#define MAX_FORTRESS_DIST   200   /* Nether blocks from the Nether origin */
+#define MAX_BASTION_DIST    200   /* Nether blocks from the Nether origin */
+#define MAX_STRONGHOLD_DIST 2000  /* Overworld blocks from the world origin */
+#define SEEDS_TO_FIND       5
+
+static double sq_dist(int x, int z) { return (double)x*x + (double)z*z; }
+
+int main(void)
+{
+    /* Hash the current timestamp for a platform-independent random start. */
+    uint64_t s48 = (uint64_t)(unsigned long)time(NULL);
+    s48 = (s48 ^ (s48 >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    s48 = (s48 ^ (s48 >> 27)) * 0x94d049bb133111ebULL;
+    s48 = (s48 ^ (s48 >> 31)) & 0xffffffffffffULL;
+
+    Generator g;
+    setupGenerator(&g, MC_VERSION, 0);
+
+    const double maxFD2 = (double)MAX_FORTRESS_DIST   * MAX_FORTRESS_DIST;
+    const double maxBD2 = (double)MAX_BASTION_DIST    * MAX_BASTION_DIST;
+    const double maxSD2 = (double)MAX_STRONGHOLD_DIST * MAX_STRONGHOLD_DIST;
+
+    int found = 0;
+    for (; found < SEEDS_TO_FIND; s48 = (s48 + 1) & 0xffffffffffffULL)
+    {
+        /* Stage 1: geometry filter (cheap) */
+        Pos fortressPos = {0, 0}, bastionPos = {0, 0};
+        int hasFortress = 0, hasBastion = 0;
+        int rx, rz;
+        for (rx = -1; rx <= 1; rx++) {
+            for (rz = -1; rz <= 1; rz++) {
+                Pos p;
+                if (!hasFortress &&
+                    getStructurePos(Fortress, MC_VERSION, s48, rx, rz, &p) &&
+                    sq_dist(p.x, p.z) <= maxFD2)
+                { fortressPos = p; hasFortress = 1; }
+                if (!hasBastion &&
+                    getStructurePos(Bastion, MC_VERSION, s48, rx, rz, &p) &&
+                    sq_dist(p.x, p.z) <= maxBD2)
+                { bastionPos = p; hasBastion = 1; }
+                if (hasFortress && hasBastion) break;
+            }
+            if (hasFortress && hasBastion) break;
+        }
+        if (!hasFortress || !hasBastion) continue;
+
+        StrongholdIter sh;
+        Pos shApprox = initFirstStronghold(&sh, MC_VERSION, s48);
+        if (sq_dist(shApprox.x, shApprox.z) > maxSD2) continue;
+
+        /* Stage 2: biome validation (expensive) */
+        applySeed(&g, DIM_NETHER, s48);
+        if (!isViableStructurePos(Fortress, &g, fortressPos.x, fortressPos.z, 0)) continue;
+        if (!isViableStructurePos(Bastion,  &g, bastionPos.x,  bastionPos.z,  0)) continue;
+
+        applySeed(&g, DIM_OVERWORLD, s48);
+        if (nextStronghold(&sh, &g) < 0) continue;
+        Pos spawn = estimateSpawn(&g, NULL);
+
+        found++;
+        printf("=== Seed #%d ===\n", found);
+        printf("  World seed:       %" PRId64 "\n", (int64_t)s48);
+        printf("  Overworld spawn:  (%5d, %5d)\n", spawn.x, spawn.z);
+        printf("  Nether Fortress:  (%5d, %5d)  [~%.0f Nether blocks]\n",
+               fortressPos.x, fortressPos.z,
+               sqrt(sq_dist(fortressPos.x, fortressPos.z)));
+        printf("  Bastion Remnant:  (%5d, %5d)  [~%.0f Nether blocks]\n",
+               bastionPos.x, bastionPos.z,
+               sqrt(sq_dist(bastionPos.x, bastionPos.z)));
+        printf("  First Stronghold: (%5d, %5d)  [~%.0f blocks]\n",
+               sh.pos.x, sh.pos.z,
+               sqrt(sq_dist(sh.pos.x, sh.pos.z)));
+        printf("\n");
+    }
+    return 0;
+}
+```
+
 #### Strongholds and Spawn
 
 Strongholds, as well as the world spawn point, actually search until they find a suitable location, rather than checking a single spot like most other structures. This causes them to be particularly performance expensive to find. Furthermore, the positions of strongholds have to be generated in a certain order, which can be done in iteratively with `initFirstStronghold()` and `nextStronghold()`. For the world spawn, the generation starts with a search for a suitable biome near the origin and will continue until a grass or podzol block is found. There is no reliable way to check actual blocks, so the search relies on a statistic, matching grass presence to biomes. Alternatively, we can simply use `estimateSpawn()` and terminate the search after the first biome check under the assumption that grass is nearby.
