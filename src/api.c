@@ -366,9 +366,11 @@ static int parse_request(const char *body, SearchRequest *req,
         buf[len] = '\0';
 
         char    type_name[64] = {0};
+        char    biome_name[64] = {0};
         int64_t max_dist = 0;
         json_read_string(buf, "type",         type_name, sizeof(type_name));
         json_read_int64(buf,  "max_distance", &max_dist);
+        json_read_string(buf, "biome",        biome_name, sizeof(biome_name));
 
         int stype = parse_structure_type(type_name);
         if (stype < 0) { *errmsg = "unknown structure type"; return 0; }
@@ -380,8 +382,15 @@ static int parse_request(const char *body, SearchRequest *req,
             return 0;
         }
 
+        int biome_id = -1;
+        if (biome_name[0] != '\0') {
+            biome_id = parse_biome_name(biome_name);
+            if (biome_id < 0) { *errmsg = "unknown biome name"; return 0; }
+        }
+
         req->structures[req->num_structures].type         = stype;
         req->structures[req->num_structures].max_distance = (int)max_dist;
+        req->structures[req->num_structures].biome        = biome_id;
         req->num_structures++;
         arr = end + 1;
     }
@@ -404,6 +413,28 @@ static char *build_structures_json(void)
 
     int pos = 0;
     pos += snprintf(buf + pos, cap - (size_t)pos, "{\"structures\":[");
+    for (int i = 0; names[i]; i++) {
+        if (i > 0) pos += snprintf(buf + pos, cap - (size_t)pos, ",");
+        pos += snprintf(buf + pos, cap - (size_t)pos, "\"%s\"", names[i]);
+    }
+    snprintf(buf + pos, cap - (size_t)pos, "]}");
+    return buf;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * GET /biomes response builder
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+static char *build_biomes_json(void)
+{
+    const char * const *names = get_biome_names();
+    size_t cap = 32;
+    for (int i = 0; names[i]; i++) cap += strlen(names[i]) + 4;
+    char *buf = (char *)malloc(cap);
+    if (!buf) return NULL;
+
+    int pos = 0;
+    pos += snprintf(buf + pos, cap - (size_t)pos, "{\"biomes\":[");
     for (int i = 0; names[i]; i++) {
         if (i > 0) pos += snprintf(buf + pos, cap - (size_t)pos, ",");
         pos += snprintf(buf + pos, cap - (size_t)pos, "\"%s\"", names[i]);
@@ -580,6 +611,21 @@ enum MHD_Result handle_request(void *cls,
                 return send_response(connection, MHD_HTTP_METHOD_NOT_ALLOWED,
                                      "{\"error\":\"use GET\"}");
             char *body = build_structures_json();
+            if (!body)
+                return send_response(connection,
+                    MHD_HTTP_INTERNAL_SERVER_ERROR,
+                    "{\"error\":\"out of memory\"}");
+            enum MHD_Result r = send_response(connection, MHD_HTTP_OK, body);
+            free(body);
+            return r;
+        }
+
+        /* ── GET /biomes ─────────────────────────────────────────────────── */
+        if (strcmp(url, "/biomes") == 0) {
+            if (strcmp(method, "GET") != 0)
+                return send_response(connection, MHD_HTTP_METHOD_NOT_ALLOWED,
+                                     "{\"error\":\"use GET\"}");
+            char *body = build_biomes_json();
             if (!body)
                 return send_response(connection,
                     MHD_HTTP_INTERNAL_SERVER_ERROR,

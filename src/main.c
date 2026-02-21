@@ -46,6 +46,7 @@ int main(int argc, char *argv[])
 
     printf("Cubiomes seed-search API listening on port %d\n", port);
     printf("  GET  http://localhost:%d/structures\n", port);
+    printf("  GET  http://localhost:%d/biomes\n", port);
     printf("  POST http://localhost:%d/search\n", port);
     printf("  WS   ws://localhost:%d/search/stream\n", port);
     printf("Rate limit: %d requests per %d seconds per IP\n",
