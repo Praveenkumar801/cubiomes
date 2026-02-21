@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define MAX_STRUCT_QUERIES 16
-#define MAX_RESULTS        1000
+#define MAX_RESULTS        10
 #define MAX_THREADS        16
 
 typedef struct {
@@ -44,5 +44,12 @@ int parse_structure_type(const char *name);
  * into *result (which must be zero-initialised by the caller).
  */
 void search_seeds(const SearchRequest *req, SearchResult *result);
+
+/*
+ * Returns a NULL-terminated array of all supported structure-type name
+ * strings (e.g. "village", "monument", …).  The array is static; do not
+ * free or modify it.
+ */
+const char * const *get_structure_names(void);
 
 #endif /* ENGINE_H_ */

@@ -68,6 +68,21 @@ int parse_structure_type(const char *name)
     return -1;
 }
 
+const char * const *get_structure_names(void)
+{
+    /* Build a static NULL-terminated array of name pointers once. */
+    static const char *names[32]; /* more than enough for all entries */
+    static int initialized = 0;
+    if (!initialized) {
+        int n = 0;
+        for (int i = 0; g_struct_names[i].name && n < 31; i++)
+            names[n++] = g_struct_names[i].name;
+        names[n] = NULL;
+        initialized = 1;
+    }
+    return (const char * const *)names;
+}
+
 /* How often (in seeds scanned) each thread re-checks the shared done flag */
 #define RESULT_CHECK_INTERVAL 0x1000  /* every 4096 seeds */
 

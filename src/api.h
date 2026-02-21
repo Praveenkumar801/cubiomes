@@ -1,11 +1,38 @@
 #ifndef API_H_
 #define API_H_
 
+#include <pthread.h>
+#include <time.h>
 #include <microhttpd.h>
+
+/* ── rate limiter ─────────────────────────────────────────────────────────── */
+
+#define RATE_LIMIT_WINDOW    60  /* sliding-window size in seconds           */
+#define RATE_LIMIT_MAX_REQS  10  /* max requests per IP per window           */
+#define RATE_TABLE_SIZE     256  /* number of concurrently tracked IPs       */
+
+typedef struct {
+    char   ip[48];       /* client IP string (fits IPv4 and IPv6)  */
+    int    count;        /* requests issued within the window      */
+    time_t window_start; /* unix timestamp when the window opened  */
+} RateEntry;
+
+typedef struct {
+    RateEntry       entries[RATE_TABLE_SIZE];
+    pthread_mutex_t mutex;
+} RateLimiter;
+
+void rate_limiter_init(RateLimiter *rl);
+void rate_limiter_destroy(RateLimiter *rl);
+
+/* Returns 1 if the request is allowed, 0 if the caller is rate-limited. */
+int  rate_limiter_check(RateLimiter *rl, const char *ip);
+
+/* ── MHD callbacks ────────────────────────────────────────────────────────── */
 
 /*
  * MHD access-handler callback (see MHD_AccessHandlerCallback).
- * Register this with MHD_start_daemon().
+ * @cls must point to a RateLimiter.
  */
 enum MHD_Result handle_request(void *cls,
                                 struct MHD_Connection *connection,
