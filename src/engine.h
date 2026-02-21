@@ -10,6 +10,7 @@
 typedef struct {
     int  type;          /* StructureType enum value */
     int  max_distance;  /* max block distance from (0,0) */
+    int  biome;         /* required BiomeID at structure pos, or -1 for any */
 } StructureQuery;
 
 typedef struct {
@@ -40,6 +41,12 @@ int parse_mc_version(const char *str);
 int parse_structure_type(const char *name);
 
 /*
+ * Parse a biome name (e.g. "plains") into a BiomeID enum value.
+ * Returns -1 on failure.
+ */
+int parse_biome_name(const char *name);
+
+/*
  * Run a multithreaded seed search according to *req and write the results
  * into *result (which must be zero-initialised by the caller).
  */
@@ -67,5 +74,12 @@ void search_seeds_stream(const SearchRequest *req,
  * free or modify it.
  */
 const char * const *get_structure_names(void);
+
+/*
+ * Returns a NULL-terminated array of all supported biome name strings
+ * (e.g. "plains", "forest", …).  The array is static; do not free or
+ * modify it.
+ */
+const char * const *get_biome_names(void);
 
 #endif /* ENGINE_H_ */

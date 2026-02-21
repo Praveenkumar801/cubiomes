@@ -84,8 +84,146 @@ const char * const *get_structure_names(void)
     return (const char * const *)names;
 }
 
+/* ── biome-name → BiomeID ────────────────────────────────────────────────── */
+
+static const struct { const char *name; int id; } g_biome_names[] = {
+    { "ocean",                        0   },
+    { "plains",                       1   },
+    { "desert",                       2   },
+    { "mountains",                    3   },
+    { "forest",                       4   },
+    { "taiga",                        5   },
+    { "swamp",                        6   },
+    { "river",                        7   },
+    { "nether_wastes",                8   },
+    { "the_end",                      9   },
+    { "frozen_ocean",                 10  },
+    { "frozen_river",                 11  },
+    { "snowy_tundra",                 12  },
+    { "snowy_mountains",              13  },
+    { "mushroom_fields",              14  },
+    { "mushroom_field_shore",         15  },
+    { "beach",                        16  },
+    { "desert_hills",                 17  },
+    { "wooded_hills",                 18  },
+    { "taiga_hills",                  19  },
+    { "mountain_edge",                20  },
+    { "jungle",                       21  },
+    { "jungle_hills",                 22  },
+    { "jungle_edge",                  23  },
+    { "deep_ocean",                   24  },
+    { "stone_shore",                  25  },
+    { "snowy_beach",                  26  },
+    { "birch_forest",                 27  },
+    { "birch_forest_hills",           28  },
+    { "dark_forest",                  29  },
+    { "snowy_taiga",                  30  },
+    { "snowy_taiga_hills",            31  },
+    { "giant_tree_taiga",             32  },
+    { "giant_tree_taiga_hills",       33  },
+    { "wooded_mountains",             34  },
+    { "savanna",                      35  },
+    { "savanna_plateau",              36  },
+    { "badlands",                     37  },
+    { "wooded_badlands_plateau",      38  },
+    { "badlands_plateau",             39  },
+    { "small_end_islands",            40  },
+    { "end_midlands",                 41  },
+    { "end_highlands",                42  },
+    { "end_barrens",                  43  },
+    { "warm_ocean",                   44  },
+    { "lukewarm_ocean",               45  },
+    { "cold_ocean",                   46  },
+    { "deep_warm_ocean",              47  },
+    { "deep_lukewarm_ocean",          48  },
+    { "deep_cold_ocean",              49  },
+    { "deep_frozen_ocean",            50  },
+    { "the_void",                     127 },
+    { "sunflower_plains",             129 },
+    { "desert_lakes",                 130 },
+    { "gravelly_mountains",           131 },
+    { "flower_forest",                132 },
+    { "taiga_mountains",              133 },
+    { "swamp_hills",                  134 },
+    { "ice_spikes",                   140 },
+    { "modified_jungle",              149 },
+    { "modified_jungle_edge",         151 },
+    { "tall_birch_forest",            155 },
+    { "tall_birch_hills",             156 },
+    { "dark_forest_hills",            157 },
+    { "snowy_taiga_mountains",        158 },
+    { "giant_spruce_taiga",           160 },
+    { "giant_spruce_taiga_hills",     161 },
+    { "modified_gravelly_mountains",  162 },
+    { "shattered_savanna",            163 },
+    { "shattered_savanna_plateau",    164 },
+    { "eroded_badlands",              165 },
+    { "modified_wooded_badlands_plateau", 166 },
+    { "modified_badlands_plateau",    167 },
+    { "bamboo_jungle",                168 },
+    { "bamboo_jungle_hills",          169 },
+    { "soul_sand_valley",             170 },
+    { "crimson_forest",               171 },
+    { "warped_forest",                172 },
+    { "basalt_deltas",                173 },
+    { "dripstone_caves",              174 },
+    { "lush_caves",                   175 },
+    { "meadow",                       177 },
+    { "grove",                        178 },
+    { "snowy_slopes",                 179 },
+    { "jagged_peaks",                 180 },
+    { "frozen_peaks",                 181 },
+    { "stony_peaks",                  182 },
+    { "deep_dark",                    183 },
+    { "mangrove_swamp",               184 },
+    { "cherry_grove",                 185 },
+    { "pale_garden",                  186 },
+    { NULL, -1 }
+};
+
+int parse_biome_name(const char *name)
+{
+    for (int i = 0; g_biome_names[i].name; i++)
+        if (strcmp(name, g_biome_names[i].name) == 0)
+            return g_biome_names[i].id;
+    return -1;
+}
+
+#define MAX_BIOME_TYPES 128  /* must be > number of entries in g_biome_names */
+const char * const *get_biome_names(void)
+{
+    static const char *names[MAX_BIOME_TYPES];
+    static int initialized = 0;
+    if (!initialized) {
+        int n = 0;
+        for (int i = 0; g_biome_names[i].name && n < MAX_BIOME_TYPES - 1; i++)
+            names[n++] = g_biome_names[i].name;
+        names[n] = NULL;
+        initialized = 1;
+    }
+    return (const char * const *)names;
+}
+
 /* How often (in seeds scanned) each thread re-checks the shared done flag */
 #define RESULT_CHECK_INTERVAL 0x1000  /* every 4096 seeds */
+
+/* ── biome check helper ──────────────────────────────────────────────────── */
+
+/* Returns 1 if the structure position satisfies the optional biome filter,
+ * 0 otherwise.  When sq->biome < 0 (no filter) this always returns 1.
+ * The generator dimension is restored to DIM_OVERWORLD on return. */
+static int check_biome_filter(Generator *g, const StructureQuery *sq,
+                               int mc_version, int64_t seed, Pos pos)
+{
+    if (sq->biome < 0)
+        return 1;
+    StructureConfig sconf;
+    getStructureConfig(sq->type, mc_version, &sconf);
+    applySeed(g, sconf.dim, (uint64_t)seed);
+    int biome_at = getBiomeAt(g, 4, pos.x >> 2, 15, pos.z >> 2);
+    applySeed(g, DIM_OVERWORLD, (uint64_t)seed);
+    return biome_at == sq->biome;
+}
 
 /* ── per-thread work ─────────────────────────────────────────────────────── */
 
@@ -156,6 +294,11 @@ static void *thread_worker(void *arg)
                     /* Biome viability check */
                     if (!isViableStructurePos(sq->type, &g,
                                              pos.x, pos.z, 0))
+                        continue;
+
+                    /* Optional biome filter */
+                    if (!check_biome_filter(&g, sq, req->mc_version,
+                                           seed, pos))
                         continue;
 
                     found = 1;
@@ -250,6 +393,11 @@ static void *stream_thread_worker(void *arg)
                         continue;
 
                     if (!isViableStructurePos(sq->type, &g, pos.x, pos.z, 0))
+                        continue;
+
+                    /* Optional biome filter */
+                    if (!check_biome_filter(&g, sq, req->mc_version,
+                                           seed, pos))
                         continue;
 
                     found = 1;

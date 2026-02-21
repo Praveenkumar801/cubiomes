@@ -41,6 +41,7 @@ is helpful but not required.
   - [Configuration](#configuration)
   - [API Reference](#api-reference)
     - [GET /structures](#get-structures)
+    - [GET /biomes](#get-biomes)
     - [POST /search](#post-search)
     - [WS /search/stream](#ws-searchstream)
   - [Rate Limiting](#rate-limiting)
@@ -562,6 +563,7 @@ Startup output:
 ```
 Cubiomes seed-search API listening on port 8080
   GET  http://localhost:8080/structures
+  GET  http://localhost:8080/biomes
   POST http://localhost:8080/search
   WS   ws://localhost:8080/search/stream
 Rate limit: 10 requests per 60 seconds per IP
@@ -614,6 +616,40 @@ curl http://localhost:8080/structures
 
 ---
 
+#### GET /biomes
+
+Returns the list of biome names that can be used in the `biome` field of a
+structure constraint.
+
+```sh
+curl http://localhost:8080/biomes
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "biomes": [
+    "ocean", "plains", "desert", "mountains", "forest", "taiga", "swamp",
+    "river", "nether_wastes", "the_end", "frozen_ocean", "frozen_river",
+    "snowy_tundra", "snowy_mountains", "mushroom_fields",
+    "mushroom_field_shore", "beach", "desert_hills", "wooded_hills",
+    "taiga_hills", "mountain_edge", "jungle", "jungle_hills", "jungle_edge",
+    "deep_ocean", "stone_shore", "snowy_beach", "birch_forest",
+    "birch_forest_hills", "dark_forest", "snowy_taiga", "snowy_taiga_hills",
+    "giant_tree_taiga", "giant_tree_taiga_hills", "wooded_mountains",
+    "savanna", "savanna_plateau", "badlands", "wooded_badlands_plateau",
+    "badlands_plateau", "warm_ocean", "lukewarm_ocean", "cold_ocean",
+    "bamboo_jungle", "soul_sand_valley", "crimson_forest", "warped_forest",
+    "basalt_deltas", "meadow", "grove", "snowy_slopes", "jagged_peaks",
+    "frozen_peaks", "stony_peaks", "deep_dark", "mangrove_swamp",
+    "cherry_grove", "pale_garden"
+  ]
+}
+```
+
+---
+
 #### POST /search
 
 Synchronously searches a seed range and returns up to `max_results` seeds
@@ -636,6 +672,7 @@ Each **structure constraint** object:
 |-------|------|----------|-------------|
 | `type` | string | ✓ | Structure name from `GET /structures` |
 | `max_distance` | integer | ✓ | Max block distance from `(0, 0)` |
+| `biome` | string | ✗ | If provided, the structure must spawn in this biome (name from `GET /biomes`). Omit to accept any biome. |
 
 **Example — find seeds with a Village within 500 blocks of spawn:**
 
@@ -679,11 +716,27 @@ curl -X POST http://localhost:8080/search \
      }'
 ```
 
+**Example — Village in a specific biome (plains) within 500 blocks:**
+
+```sh
+curl -X POST http://localhost:8080/search \
+     -H "Content-Type: application/json" \
+     -d '{
+       "version":    "1.21",
+       "seed_start": 0,
+       "seed_end":   5000000,
+       "max_results": 3,
+       "structures": [
+         { "type": "village", "max_distance": 500, "biome": "plains" }
+       ]
+     }'
+```
+
 **Error responses:**
 
 | HTTP status | Condition |
 |-------------|-----------|
-| `400 Bad Request` | Missing/invalid fields, unknown version or structure type, seed range > 1 billion |
+| `400 Bad Request` | Missing/invalid fields, unknown version, structure type, or biome name, seed range > 1 billion |
 | `404 Not Found` | Unknown URL path |
 | `405 Method Not Allowed` | Wrong HTTP method |
 | `429 Too Many Requests` | Rate limit exceeded |
