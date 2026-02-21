@@ -7,13 +7,13 @@
 
 /* ── rate limiter ─────────────────────────────────────────────────────────── */
 
-#define RATE_LIMIT_WINDOW    60  /* sliding-window size in seconds           */
-#define RATE_LIMIT_MAX_REQS  10  /* max requests per IP per window           */
-#define RATE_TABLE_SIZE     256  /* number of concurrently tracked IPs       */
+#define RATE_LIMIT_WINDOW    60  /* sliding-window length in seconds          */
+#define RATE_LIMIT_MAX_REQS  10  /* max requests per IP per window            */
+#define RATE_TABLE_SIZE     256  /* hash-table slots for tracked IPs          */
 
 typedef struct {
-    char   ip[48];       /* client IP string (fits IPv4 and IPv6)  */
-    int    count;        /* requests issued within the window      */
+    char   ip[48];       /* client IP string (IPv4 or IPv6)        */
+    int    count;        /* requests in the current window         */
     time_t window_start; /* unix timestamp when the window opened  */
 } RateEntry;
 

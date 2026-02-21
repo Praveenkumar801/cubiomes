@@ -46,6 +46,22 @@ int parse_structure_type(const char *name);
 void search_seeds(const SearchRequest *req, SearchResult *result);
 
 /*
+ * Callback invoked for every seed that passes all structure checks.
+ * Called serially (under the engine's internal mutex) so the implementation
+ * does not need additional locking.
+ */
+typedef void (*seed_found_cb)(int64_t seed, void *userdata);
+
+/*
+ * Like search_seeds() but streams results via a callback instead of
+ * collecting them in a SearchResult array.  Total seeds scanned is written
+ * to *scanned_out if non-NULL.
+ */
+void search_seeds_stream(const SearchRequest *req,
+                         seed_found_cb on_seed, void *userdata,
+                         int64_t *scanned_out);
+
+/*
  * Returns a NULL-terminated array of all supported structure-type name
  * strings (e.g. "village", "monument", …).  The array is static; do not
  * free or modify it.

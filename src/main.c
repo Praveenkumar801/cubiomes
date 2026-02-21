@@ -26,28 +26,37 @@ int main(int argc, char *argv[])
     signal(SIGINT,  handle_signal);
     signal(SIGTERM, handle_signal);
 
+    RateLimiter rl;
+    rate_limiter_init(&rl);
+
     struct MHD_Daemon *daemon =
-        MHD_start_daemon(MHD_USE_INTERNAL_POLLING_THREAD,
+        MHD_start_daemon(MHD_USE_INTERNAL_POLLING_THREAD | MHD_ALLOW_UPGRADE,
                          (uint16_t)port,
                          NULL, NULL,
-                         &handle_request, NULL,
+                         &handle_request, &rl,
                          MHD_OPTION_NOTIFY_COMPLETED,
                              &cleanup_request, NULL,
                          MHD_OPTION_END);
 
     if (!daemon) {
         fprintf(stderr, "Failed to start HTTP server on port %d\n", port);
+        rate_limiter_destroy(&rl);
         return 1;
     }
 
     printf("Cubiomes seed-search API listening on port %d\n", port);
-    printf("POST http://localhost:%d/search\n", port);
+    printf("  GET  http://localhost:%d/structures\n", port);
+    printf("  POST http://localhost:%d/search\n", port);
+    printf("  WS   ws://localhost:%d/search/stream\n", port);
+    printf("Rate limit: %d requests per %d seconds per IP\n",
+           RATE_LIMIT_MAX_REQS, RATE_LIMIT_WINDOW);
     printf("Press Ctrl-C to stop.\n");
 
     while (g_running)
         sleep(1);
 
     MHD_stop_daemon(daemon);
+    rate_limiter_destroy(&rl);
     printf("\nServer stopped.\n");
     return 0;
 }

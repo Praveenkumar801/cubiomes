@@ -71,11 +71,12 @@ int parse_structure_type(const char *name)
 const char * const *get_structure_names(void)
 {
     /* Build a static NULL-terminated array of name pointers once. */
-    static const char *names[32]; /* more than enough for all entries */
+    #define MAX_STRUCTURE_TYPES 32
+    static const char *names[MAX_STRUCTURE_TYPES];
     static int initialized = 0;
     if (!initialized) {
         int n = 0;
-        for (int i = 0; g_struct_names[i].name && n < 31; i++)
+        for (int i = 0; g_struct_names[i].name && n < MAX_STRUCTURE_TYPES - 1; i++)
             names[n++] = g_struct_names[i].name;
         names[n] = NULL;
         initialized = 1;
@@ -184,6 +185,104 @@ static void *thread_worker(void *arg)
     return NULL;
 }
 
+/* ── streaming per-thread work ───────────────────────────────────────────── */
+
+typedef struct {
+    const SearchRequest *req;
+    int64_t              seed_start;
+    int64_t              seed_end;
+    seed_found_cb        on_seed;
+    void                *cb_userdata;
+    int                 *found_total;   /* shared count of found seeds      */
+    int64_t             *scanned_total; /* shared count of scanned seeds    */
+    pthread_mutex_t     *mutex;
+} StreamThreadArg;
+
+static void *stream_thread_worker(void *arg)
+{
+    StreamThreadArg     *targ = (StreamThreadArg *)arg;
+    const SearchRequest *req  = targ->req;
+
+    Generator g;
+    setupGenerator(&g, req->mc_version, 0);
+
+    int64_t local_scanned = 0;
+
+    for (int64_t seed = targ->seed_start; seed <= targ->seed_end; seed++) {
+
+        if ((local_scanned & (RESULT_CHECK_INTERVAL - 1)) == 0) {
+            pthread_mutex_lock(targ->mutex);
+            int done = *targ->found_total >= req->max_results;
+            pthread_mutex_unlock(targ->mutex);
+            if (done)
+                break;
+        }
+
+        local_scanned++;
+
+        applySeed(&g, DIM_OVERWORLD, (uint64_t)seed);
+
+        int valid = 1;
+
+        for (int s = 0; s < req->num_structures && valid; s++) {
+            const StructureQuery *sq = &req->structures[s];
+
+            StructureConfig sconf;
+            if (!getStructureConfig(sq->type, req->mc_version, &sconf)) {
+                valid = 0;
+                break;
+            }
+
+            int region_blocks = (int)sconf.regionSize * 16;
+            int max_reg = (sq->max_distance / region_blocks) + 2;
+
+            int found = 0;
+            for (int rx = -max_reg; rx <= max_reg && !found; rx++) {
+                for (int rz = -max_reg; rz <= max_reg && !found; rz++) {
+                    Pos pos;
+                    if (!getStructurePos(sq->type, req->mc_version,
+                                        (uint64_t)seed, rx, rz, &pos))
+                        continue;
+
+                    int64_t dx = pos.x, dz = pos.z;
+                    int64_t md = sq->max_distance;
+                    if (dx*dx + dz*dz > md * md)
+                        continue;
+
+                    if (!isViableStructurePos(sq->type, &g, pos.x, pos.z, 0))
+                        continue;
+
+                    found = 1;
+                }
+            }
+
+            if (!found)
+                valid = 0;
+        }
+
+        if (valid) {
+            pthread_mutex_lock(targ->mutex);
+            int done = 0;
+            if (*targ->found_total < req->max_results) {
+                /* on_seed is called while holding the mutex so callers need
+                 * not worry about concurrent invocations. */
+                targ->on_seed(seed, targ->cb_userdata);
+                (*targ->found_total)++;
+            }
+            done = *targ->found_total >= req->max_results;
+            pthread_mutex_unlock(targ->mutex);
+            if (done)
+                break;
+        }
+    }
+
+    pthread_mutex_lock(targ->mutex);
+    *targ->scanned_total += local_scanned;
+    pthread_mutex_unlock(targ->mutex);
+
+    return NULL;
+}
+
 /* ── public entry point ──────────────────────────────────────────────────── */
 
 void search_seeds(const SearchRequest *req, SearchResult *result)
@@ -218,4 +317,49 @@ void search_seeds(const SearchRequest *req, SearchResult *result)
         pthread_join(threads[i], NULL);
 
     pthread_mutex_destroy(&mutex);
+}
+
+void search_seeds_stream(const SearchRequest *req,
+                         seed_found_cb on_seed, void *userdata,
+                         int64_t *scanned_out)
+{
+    int64_t total = req->seed_end - req->seed_start + 1;
+    if (total <= 0) {
+        if (scanned_out) *scanned_out = 0;
+        return;
+    }
+
+    int nthreads = MAX_THREADS;
+    if (total < nthreads)
+        nthreads = (int)total;
+
+    int64_t chunk = total / nthreads;
+
+    pthread_t       threads[MAX_THREADS];
+    StreamThreadArg args[MAX_THREADS];
+    pthread_mutex_t mutex         = PTHREAD_MUTEX_INITIALIZER;
+    int             found_total   = 0;
+    int64_t         scanned_total = 0;
+
+    for (int i = 0; i < nthreads; i++) {
+        args[i].req           = req;
+        args[i].seed_start    = req->seed_start + (int64_t)i * chunk;
+        args[i].seed_end      = (i == nthreads - 1)
+                                    ? req->seed_end
+                                    : args[i].seed_start + chunk - 1;
+        args[i].on_seed       = on_seed;
+        args[i].cb_userdata   = userdata;
+        args[i].found_total   = &found_total;
+        args[i].scanned_total = &scanned_total;
+        args[i].mutex         = &mutex;
+        pthread_create(&threads[i], NULL, stream_thread_worker, &args[i]);
+    }
+
+    for (int i = 0; i < nthreads; i++)
+        pthread_join(threads[i], NULL);
+
+    pthread_mutex_destroy(&mutex);
+
+    if (scanned_out)
+        *scanned_out = scanned_total;
 }
